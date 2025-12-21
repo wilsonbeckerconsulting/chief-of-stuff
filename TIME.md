@@ -11,11 +11,11 @@
 ### NËDL
 | Date | Hours | Notes |
 |------|-------|-------|
-| Dec 12 | 0.75 | Dry run standup (Day -1) |
-| Dec 18 | 0.75 | Brett sync, email catchup |
-| Dec 19 | 0.5 | Standup |
+| 2025-12-12 | 0.75 | Dry run standup (Day -1) |
+| 2025-12-18 | 0.75 | Brett sync, email catchup |
+| 2025-12-19 | 2.5 | Standup + work session |
 
-**December Total: 2.0 hrs**
+**December Total: 4.0 hrs**
 
 ### NexTitle
 | Date | Hours | Notes |

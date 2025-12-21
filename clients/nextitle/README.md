@@ -11,9 +11,6 @@ Title plant company. They acquire county title documents (hundreds of millions),
 
 Partnership with AWS and Slalom Consulting - contractual obligation to deliver 30M documents in ~6 months.
 
-## Hours
-~10 hours/week (splitting 20hrs total with NËDL)
-
 ## Key Contacts
 - Stephen (CEO/owner) - spelled Stephen, pronounced "Stefan"
 - Ty (fractional CFO) - working on confirming CTO role

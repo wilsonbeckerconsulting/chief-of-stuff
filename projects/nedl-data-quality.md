@@ -43,7 +43,3 @@ Initial findings: data not super complete. Brett doing analysis.
 
 ## Parking Lot (not now)
 - Alternative data sources (Brett's specialty, but team said no for now)
-
-## Recently Completed
-- [x] First standup dry run (Dec 12)
-- [x] Get access to all systems (Keegan granted, credentials in .secrets/)

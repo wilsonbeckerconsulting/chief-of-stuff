@@ -14,5 +14,3 @@ status: pending (engagement not locked down)
 - [ ] Get confirmed as fractional CTO (Ty working on it)
 - [ ] Define document acquisition strategy for 30M docs
 - [ ] Design storage and indexing solution
-
-## Recently Completed

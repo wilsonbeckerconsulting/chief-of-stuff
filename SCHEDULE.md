@@ -9,17 +9,12 @@
 | Jan 9-13, 2026 | OUT | Out of town (Fri-Tue) |
 | Late Jan 2026 | OUT | Hawaii, 2-3 weeks |
 
-## Recurring Meetings
+## Recurring
 
-| Meeting | Day/Time | Client |
-|---------|----------|--------|
-| Daily Standup | Daily @ 11:30am | NËDL |
-
-## Weekly Reminders
-
-| Day | Task |
-|-----|------|
-| Friday | Review hours in TIME.md, prepare for invoicing |
+| Frequency | Task | Client |
+|-----------|------|--------|
+| Daily @ 11:30am | Standup | NËDL |
+| Friday | Review TIME.md, verify hours logged | All |
 
 ## Key Dates
 

@@ -1,32 +1,62 @@
-# Chief of Staff App
+# Chief of Stuff
 
 Personal knowledge management for a freelance contractor with a full-time job (Shopify) and two freelance clients (NËDL, NexTitle).
 
 **On every interaction:** Check system date. Be honest, not sycophantic—challenge bad thinking.
 
 ## Navigate
-`SCHEDULE.md` → time off, meetings | `clients/INDEX.md` → who | `projects/INDEX.md` → active work | `TIME.md` → billable hours | `raw/` → brain dumps (search by tags) | `.secrets/` → credentials & API keys (gitignored, local only)
+`SCHEDULE.md` → time off, meetings | `clients/INDEX.md` → who | `clients/<client>/README.md` → client details | `projects/INDEX.md` → active work | `projects/<project>.md` → project details | `TIME.md` → billable hours | `raw/` → brain dumps (search by tags) | `.secrets/` → credentials & API keys (gitignored, local only)
 
-## Commands
+## Agent Behaviors (No Magic Commands)
 
-**`initialize`** — Read this, get date, skim projects. Report ready.
+**Brain dumps:** When user shares stream-of-consciousness notes, save verbatim to `raw/YYYY-MM-DD-NNN.md` with date + tags. NNN is a per-day counter starting at 001 (check existing files for that date and increment). Extract actionable todos → `projects/*.md`. If todos don't fit existing project files, confirm with user before creating new project (avoid project sprawl).
 
-**`brain dump`** — Save verbatim to `raw/YYYY-MM-DD-NNN.md` with date + tags. Extract todos → `projects/*.md`. Confirm what was captured.
+**Review:** When user wants to check status (or on Fridays), check all project todos/context/blockers, scan raw/ from last 7 days for missed context, suggest priorities. Archive substantial completed work to `archive/accomplishments/`. Update files (SCD Type 1: hard delete completed). Verify TIME.md hours logged.
 
-**`review`** — Chief of Staff function: validate last 7 days of raw, check all project todos/context/blockers, suggest priorities, update files (SCD Type 1: hard delete completed). Fridays: review TIME.md for invoicing.
+**Time logging:** When user mentions hours worked, add entry to TIME.md. Format: `| YYYY-MM-DD | Hours | Notes |` under client section. Update monthly total.
 
-**`log time: [client] [hrs] - [notes]`** — Add to TIME.md.
-
-**`what do I need to do tonight?`** — Read projects, find todos due today/overdue, prioritize.
-
-**`help me with [problem]`** — Read project + client files, search raw by tags (weight recent), assist.
+**Tag search:** When user wants to find past context by topic, search raw/ files by tags (kebab-case).
 
 ## Rules
 1. **SCD Type 1** — Project files = current state only. No history.
 2. **Raw is immutable** — Never edit after creation.
 3. **No stale refs** — If deleted, never reference it.
 4. **Tags for search** — Find context in raw via tags.
-5. **Secrets are local** — `.secrets/` is gitignored. For any question about logins, credentials, API keys, or system access, **always check `.secrets/`** first. It won't appear in search results but it exists.
+5. **Secrets are local** — `.secrets/` is gitignored. For any question about logins, credentials, API keys, or system access, **always check `.secrets/`** first. It won't appear in search results but it exists. `.secrets/<client>.md` = documentation (URLs, contacts, credential notes). `clients/<client>/dev/config.py` = code-ready values for scripts. Both gitignored.
+6. **Dev work** — Exploratory/prototype code lives in `clients/<client>/dev/` (testing, experiments, notebooks, prototypes). Production code gets PR'd to client repos.
+7. **Tag conventions** — Use kebab-case, lowercase. Include: client name, project name, key people/systems/concepts. Hyphenate multi-word concepts (`entity-resolution`, `data-quality`), not proper nouns (`brett`, `nedl`, `cherre`).
+8. **Client naming** — NexTitle (capital T) in prose, `nextitle` (lowercase) in file paths/slugs.
+9. **Shopify work** — Shopify project tracking happens on work computer. Brain dumps about Shopify work can go in `raw/` if useful for context.
+
+## Accomplishment Archiving
+
+**When work is completed**, archive substantial accomplishments to weekly files.
+
+**Triggers (detect from natural language, no magic commands):**
+- User mentions completed work ("I did X", "finished Y yesterday")
+- Review context (user asks to review projects, or Friday proactive suggestion)
+- Agent marks todo as complete
+
+**Archive if substantial** (>1-2hrs effort OR client-visible deliverable):
+1. Calculate week start (Monday): `YYYY-MM-DD`
+2. Open/create `archive/accomplishments/<client>-YYYY-MM-DD.md` (where date = Monday of that week)
+3. Append: `- YYYY-MM-DD: <description>`
+4. Delete from project file (SCD Type 1 - no completed items in projects/)
+
+**Do NOT archive:** Routine tasks (standups, email), trivial fixes, exploratory work.
+
+**When uncertain:** Ask user if substantial work (>1hr, client-visible).
+
+**File format:**
+```
+# <Client> Accomplishments - Week of <Month DD, YYYY>
+
+- YYYY-MM-DD: Completed X (outcome/impact)
+```
+
+**Week calculation:** Week starts Monday (ISO 8601). If today is Wed Dec 25 → week start is Mon Dec 23.
+
+**Client detection:** 1) User mentions client, 2) Current project context, 3) Infer from content (Brett/Cherre → NËDL), 4) Ask if ambiguous.
 
 ## Agent Behavior
 Challenge my thinking. Flag overcommitment. Push back if I'm settling. Ask hard questions. Don't just agree—tell me what I need to hear.

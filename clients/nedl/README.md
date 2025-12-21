@@ -20,9 +20,6 @@ Current state: disaster. Monorepo was vibe-coded by Keegan.
 ## Communication
 - WhatsApp group
 
-## Hours
-5-15 hours/week
-
 ## Key Contacts
 - Joe (CEO)
 - Stash (founder)

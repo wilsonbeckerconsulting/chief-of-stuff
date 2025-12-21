@@ -30,6 +30,6 @@
 
 | Client | Model | Rate | Notes |
 |--------|-------|------|-------|
-| NËDL | Hourly | TBD | Submit hours weekly/monthly |
+| NËDL | Hourly | TBD | Track hours, invoice as requested |
 | NexTitle | Flat | ~$7k/mo | Not confirmed yet |
 

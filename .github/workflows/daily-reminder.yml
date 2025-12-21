@@ -1,0 +1,53 @@
+name: Daily Reminder Email
+
+on:
+  schedule:
+    # 6pm EST = 11pm UTC (winter) / 10pm UTC (summer)
+    - cron: '0 23 * * *'
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate email content
+        id: generate
+        run: |
+          EMAIL_JSON=$(node scripts/generate-reminder.js)
+          echo "json=$EMAIL_JSON" >> $GITHUB_OUTPUT
+          SHOULD_SEND=$(echo $EMAIL_JSON | jq -r '.send')
+          echo "should_send=$SHOULD_SEND" >> $GITHUB_OUTPUT
+          if [ "$SHOULD_SEND" = "true" ]; then
+            echo "subject=$(echo $EMAIL_JSON | jq -r '.subject')" >> $GITHUB_OUTPUT
+            # Handle multiline body
+            EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+            echo "body<<$EOF" >> $GITHUB_OUTPUT
+            echo $EMAIL_JSON | jq -r '.body' >> $GITHUB_OUTPUT
+            echo "$EOF" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send email via Resend
+        if: steps.generate.outputs.should_send == 'true'
+        run: |
+          curl -X POST 'https://api.resend.com/emails' \
+            -H 'Authorization: Bearer ${{ secrets.RESEND_API_KEY }}' \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "from": "Chief of Staff <onboarding@resend.dev>",
+              "to": ["wilsonebecker@gmail.com"],
+              "subject": "${{ steps.generate.outputs.subject }}",
+              "text": ${{ toJSON(steps.generate.outputs.body) }}
+            }'
+
+      - name: Skip notification
+        if: steps.generate.outputs.should_send != 'true'
+        run: echo "Nothing urgent - no email sent"

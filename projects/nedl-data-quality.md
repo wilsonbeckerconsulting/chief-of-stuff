@@ -26,20 +26,21 @@ Initial findings: data not super complete. Brett doing analysis.
 - Some date fields stored as TEXT (cherre_ingest_datetime, data_publish_date, ya_loan_maturity_date)
 
 ## Current Todos
-- [ ] **P0: Ownership Map** - entity resolution across Cherre unmask + NMHC membership + canonical_owner_* tables. MUST have historicals (SCD Type 2)
-- [ ] Text Brett to schedule offline entity-resolution planning session
-- [ ] Coordinate w/ Keegan → send Adam Fung availability for **Tuesday**
-- [ ] Check via GraphQL if recorder_v2 data (recorder_id + tax_assessor_id) is available in Cherre
-- [ ] Delete "Nedl Data Transformation" WhatsApp community → post TLDR to "needle data" group chat
+- [ ] **P0 TODAY: Data Modeling Session w/ Brett** - how to model entity resolution data + enforce referential integrity
+- [ ] **P0: Ownership Map** - entity resolution across Cherre unmask + NMHC membership + canonical_owner_* tables. MUST have historicals (SCD Type 2). Includes cleaning up NMHC file as source data.
+- [ ] Keegan call TODAY: Get architecture visibility (old nedl.com → new needl-ai app). Map old → new data models, understand database migration scope
+- [ ] Explore repos in ~/Desktop/src (old vs new system)
+- [ ] Provide leadership (Joe/Stash/Maher) visibility: timelines, effort, expenses, blockers for migration
+- [ ] Schedule Cherre call (not blocking - can access independently)
 - [ ] Create Mapbox account → get public token (starts with pk.)
-- [ ] Set up local env (nedl-app) — repo cloned ✓
-- [ ] Improve model prediction accuracy
 
-## In Progress (Brett)
+## In Progress (Brett - Dec 22)
 - Building linking table in Supabase
 - `canonical_owner_rollup` + `canonical_owner_*` tables created
 - ~14k entities across top 100 addresses identified
-- Waiting on Stash to send cleaned NMHC membership file
+- **Fixed SQL issue** - recorder_id + tax_assessor_id no longer null
+- Confirmed 1:1 relationship (testing completeness)
+- NMHC file received from Stash
 
 ## Parking Lot (not now)
 - Alternative data sources (Brett's specialty, but team said no for now)

@@ -27,8 +27,11 @@ Initial findings: data not super complete. Brett doing analysis.
 
 ## Current Todos
 - [ ] **P0 TODAY: Data Modeling Session w/ Brett** - how to model entity resolution data + enforce referential integrity
+- [ ] Wilson: Create conceptual data model for entity resolution (dim_property, dim_entity, dim_entity_identifier, fact_transaction with SCD Type 2)
+- [ ] Wilson: Investigate Cherre recorder_v2 - verify if additional grantor/grantee data available beyond what Keegan already joined
+- [ ] Brett: Test cardinality relationships between fields in Yardi and Cherre transactions
 - [ ] **P0: Ownership Map** - entity resolution across Cherre unmask + NMHC membership + canonical_owner_* tables. MUST have historicals (SCD Type 2). Includes cleaning up NMHC file as source data.
-- [ ] Keegan call TODAY: Get architecture visibility (old nedl.com → new needl-ai app). Map old → new data models, understand database migration scope
+- [ ] Reschedule Keegan call (migration visibility: old nedl.com → new nedl-ai app, data model mapping, database migration scope)
 - [ ] Explore repos in ~/Desktop/src (old vs new system)
 - [ ] Provide leadership (Joe/Stash/Maher) visibility: timelines, effort, expenses, blockers for migration
 - [ ] Schedule Cherre call (not blocking - can access independently)

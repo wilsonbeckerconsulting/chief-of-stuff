@@ -16,4 +16,5 @@ Thumbs.db
 
 # Client dev workspaces (credentials, experiments)
 clients/*/dev/config.py
+clients/*/dev/venv/
 

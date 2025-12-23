@@ -807,18 +807,27 @@ dq_check('REQUIRED_FIELD', 'bridge_transaction_party.party_name_raw NOT NULL',
 print("\n--- COMPLETENESS STATISTICS (Optional Fields) ---\n")
 
 # Optional fields - just report completeness, no pass/fail
-prop_addr_complete = sum(1 for p in dim_property if p.get('property_address'))
-record_stat('COMPLETENESS', 'dim_property.property_address',
-            f"{prop_addr_complete:,}/{len(dim_property):,} ({prop_addr_complete/len(dim_property)*100:.1f}%)")
+if len(dim_property) > 0:
+    prop_addr_complete = sum(1 for p in dim_property if p.get('property_address'))
+    record_stat('COMPLETENESS', 'dim_property.property_address',
+                f"{prop_addr_complete:,}/{len(dim_property):,} ({prop_addr_complete/len(dim_property)*100:.1f}%)")
+else:
+    record_stat('COMPLETENESS', 'dim_property.property_address', 'N/A - no data')
 
-prop_key_complete = sum(1 for t in fact_transaction if t.get('property_key'))
-record_stat('COMPLETENESS', 'fact_transaction.property_key',
-            f"{prop_key_complete:,}/{len(fact_transaction):,} ({prop_key_complete/len(fact_transaction)*100:.1f}%)",
-            "Depends on tax_assessor_id availability in source data")
+if len(fact_transaction) > 0:
+    prop_key_complete = sum(1 for t in fact_transaction if t.get('property_key'))
+    record_stat('COMPLETENESS', 'fact_transaction.property_key',
+                f"{prop_key_complete:,}/{len(fact_transaction):,} ({prop_key_complete/len(fact_transaction)*100:.1f}%)",
+                "Depends on tax_assessor_id availability in source data")
+else:
+    record_stat('COMPLETENESS', 'fact_transaction.property_key', 'N/A - no data')
 
-party_addr_complete = sum(1 for b in bridge_transaction_party if b.get('party_address_raw'))
-record_stat('COMPLETENESS', 'bridge_transaction_party.party_address_raw',
-            f"{party_addr_complete:,}/{len(bridge_transaction_party):,} ({party_addr_complete/len(bridge_transaction_party)*100:.1f}%)")
+if len(bridge_transaction_party) > 0:
+    party_addr_complete = sum(1 for b in bridge_transaction_party if b.get('party_address_raw'))
+    record_stat('COMPLETENESS', 'bridge_transaction_party.party_address_raw',
+                f"{party_addr_complete:,}/{len(bridge_transaction_party):,} ({party_addr_complete/len(bridge_transaction_party)*100:.1f}%)")
+else:
+    record_stat('COMPLETENESS', 'bridge_transaction_party.party_address_raw', 'N/A - no data')
 
 print("\n--- MODEL ASSUMPTION: PRIMARY KEY UNIQUENESS ---\n")
 

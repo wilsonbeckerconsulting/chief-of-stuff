@@ -1,0 +1,1 @@
+property_key,tax_assessor_id,assessor_parcel_number,property_address,property_city,property_state,property_zip,property_county,property_use_code,land_use_code,year_built,building_sqft,land_sqft,units_count,assessed_value,market_value,latitude,longitude,valid_from,valid_to,is_current,source_system

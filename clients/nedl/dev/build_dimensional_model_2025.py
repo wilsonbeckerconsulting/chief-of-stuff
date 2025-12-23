@@ -45,7 +45,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 def query_cherre(query, variables=None, retry=0):
     """Execute GraphQL query against Cherre API with retry logic"""
     headers = {
-        "Authorization": f"Basic {CHERRE_API_KEY}",
+        "Authorization": f"Bearer {CHERRE_API_KEY}",
         "Content-Type": "application/json"
     }
     payload = {"query": query}

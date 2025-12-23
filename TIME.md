@@ -14,7 +14,7 @@
 | 2025-12-12 | 0.75 | Dry run standup (Day -1) |
 | 2025-12-18 | 0.75 | Brett sync, email catchup |
 | 2025-12-19 | 2.5 | Standup + work session |
-| 2025-12-22 | 5.5 | Standup + work session |
+| 2025-12-22 | 7.5 | Standup + work session |
 
 
 **December Total: 4.0 hrs**

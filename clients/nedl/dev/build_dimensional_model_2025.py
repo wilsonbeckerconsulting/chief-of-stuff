@@ -19,20 +19,22 @@ Date Range: January 1, 2025 - December 22, 2025 (YTD)
 import requests
 import json
 import csv
+import pickle
 from datetime import datetime
 from collections import defaultdict, Counter
+from tqdm import tqdm
 from config import CHERRE_API_KEY, CHERRE_API_URL
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-START_DATE = "2025-01-01"
+START_DATE = "2025-06-01"
 END_DATE = "2025-12-22"
-PAGE_SIZE = 1000  # Records per query
+PAGE_SIZE = 500  # Reduced to avoid timeouts (was 1000)
 MAX_RETRIES = 3
 
-OUTPUT_DIR = "output_2025_ytd"
+OUTPUT_DIR = "output_2025_dec"
 
 # Create output directory
 import os
@@ -44,6 +46,8 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 def query_cherre(query, variables=None, retry=0):
     """Execute GraphQL query against Cherre API with retry logic"""
+    import time
+    
     headers = {
         "Authorization": f"Bearer {CHERRE_API_KEY}",
         "Content-Type": "application/json"
@@ -58,7 +62,10 @@ def query_cherre(query, variables=None, retry=0):
         if response.status_code != 200:
             print(f"⚠️  HTTP {response.status_code}: {response.text[:200]}")
             if retry < MAX_RETRIES:
-                print(f"   Retrying ({retry + 1}/{MAX_RETRIES})...")
+                # For 500 errors, wait longer before retrying (rate limit/server issue)
+                wait_time = 5 if response.status_code == 500 else 1
+                print(f"   Waiting {wait_time}s before retry ({retry + 1}/{MAX_RETRIES})...")
+                time.sleep(wait_time)
                 return query_cherre(query, variables, retry + 1)
             return None
         
@@ -84,40 +91,41 @@ def paginated_query(table_name, fields, where_clause="", order_by="", page_size=
     
     print(f"\n📊 Querying {table_name}...")
     
-    while True:
-        query = f"""
-        query {{
-            {table_name}(
-                limit: {page_size}
-                offset: {offset}
-                {where_clause}
-                {order_by}
-            ) {{
-                {fields}
+    # Create progress bar (unknown total, so use dynamic bar)
+    with tqdm(unit=" records", desc=f"  {table_name}", ncols=80) as pbar:
+        while True:
+            query = f"""
+            query {{
+                {table_name}(
+                    limit: {page_size}
+                    offset: {offset}
+                    {where_clause}
+                    {order_by}
+                ) {{
+                    {fields}
+                }}
             }}
-        }}
-        """
-        
-        result = query_cherre(query)
-        
-        if not result or 'data' not in result or table_name not in result['data']:
-            break
-        
-        records = result['data'][table_name]
-        
-        if not records:
-            break
-        
-        all_records.extend(records)
-        offset += page_size
-        
-        print(f"   Fetched {len(all_records):,} records...", end='\r')
-        
-        if max_records and len(all_records) >= max_records:
-            all_records = all_records[:max_records]
-            break
+            """
+            
+            result = query_cherre(query)
+            
+            if not result or 'data' not in result or table_name not in result['data']:
+                break
+            
+            records = result['data'][table_name]
+            
+            if not records:
+                break
+            
+            all_records.extend(records)
+            offset += page_size
+            pbar.update(len(records))
+            
+            if max_records and len(all_records) >= max_records:
+                all_records = all_records[:max_records]
+                break
     
-    print(f"   ✅ Fetched {len(all_records):,} total records from {table_name}")
+    print(f"   ✅ Fetched {len(all_records):,} total records")
     return all_records
 
 # ============================================================================
@@ -203,40 +211,40 @@ properties_raw = []
 tax_id_list = list(unique_tax_ids)
 batch_size = 500
 
-for i in range(0, len(tax_id_list), batch_size):
-    batch = tax_id_list[i:i+batch_size]
-    
-    query = f"""
-    query {{
-        tax_assessor_v2(where: {{tax_assessor_id: {{_in: {json.dumps(batch)}}}}}) {{
-            tax_assessor_id
-            assessor_parcel_number_formatted
-            property_address
-            property_city
-            property_state
-            property_zip
-            property_county
-            property_use_standardized_code
-            land_use_code
-            year_built
-            building_square_feet
-            land_square_feet
-            units_count
-            total_assessed_value
-            total_market_value
-            latitude
-            longitude
+with tqdm(total=len(tax_id_list), desc="  Fetching properties", unit=" ids", ncols=80) as pbar:
+    for i in range(0, len(tax_id_list), batch_size):
+        batch = tax_id_list[i:i+batch_size]
+        
+        query = f"""
+        query {{
+            tax_assessor_v2(where: {{tax_assessor_id: {{_in: {json.dumps(batch)}}}}}) {{
+                tax_assessor_id
+                assessor_parcel_number_raw
+                address
+                city
+                state
+                zip
+                situs_county
+                property_use_standardized_code
+                year_built
+                building_sq_ft
+                lot_size_sq_ft
+                units_count
+                assessed_value_total
+                market_value_total
+                latitude
+                longitude
+            }}
         }}
-    }}
-    """
-    
-    result = query_cherre(query)
-    if result and 'data' in result:
-        properties_raw.extend(result['data']['tax_assessor_v2'])
-    
-    print(f"   Fetched {len(properties_raw):,} properties...", end='\r')
+        """
+        
+        result = query_cherre(query)
+        if result and 'data' in result:
+            properties_raw.extend(result['data']['tax_assessor_v2'])
+        
+        pbar.update(len(batch))
 
-print(f"\n✅ Extracted {len(properties_raw):,} properties")
+print(f"✅ Extracted {len(properties_raw):,} properties")
 
 # ----------------------------------------------------------------------------
 # 3. PROPERTY HISTORY (for SCD Type 2)
@@ -247,29 +255,35 @@ print("-" * 80)
 
 property_history_raw = []
 
-for i in range(0, len(tax_id_list), batch_size):
-    batch = tax_id_list[i:i+batch_size]
-    
-    query = f"""
-    query {{
-        tax_assessor_history_v2(where: {{tax_assessor_id: {{_in: {json.dumps(batch)}}}}}) {{
-            tax_assessor_id
-            assessor_snap_shot_year
-            total_assessed_value
-            total_market_value
-            land_square_feet
-            building_square_feet
+with tqdm(total=len(tax_id_list), desc="  Fetching history", unit=" ids", ncols=80) as pbar:
+    for i in range(0, len(tax_id_list), batch_size):
+        batch = tax_id_list[i:i+batch_size]
+        
+        query = f"""
+        query {{
+            tax_assessor_history_v2(
+                where: {{tax_assessor_id: {{_in: {json.dumps(batch)}}}}}
+                order_by: {{cherre_tax_assessor_history_v2_pk: asc}}
+            ) {{
+                tax_assessor_id
+                assessor_snap_shot_year
+                assessed_value_total
+                market_value_total
+                lot_size_sq_ft
+                building_sq_ft
+                cherre_tax_assessor_history_v2_pk
+                cherre_ingest_datetime
+            }}
         }}
-    }}
-    """
-    
-    result = query_cherre(query)
-    if result and 'data' in result:
-        property_history_raw.extend(result['data']['tax_assessor_history_v2'])
-    
-    print(f"   Fetched {len(property_history_raw):,} history records...", end='\r')
+        """
+        
+        result = query_cherre(query)
+        if result and 'data' in result:
+            property_history_raw.extend(result['data']['tax_assessor_history_v2'])
+        
+        pbar.update(len(batch))
 
-print(f"\n✅ Extracted {len(property_history_raw):,} property history records")
+print(f"✅ Extracted {len(property_history_raw):,} property history records")
 
 # ----------------------------------------------------------------------------
 # 4. ENTITIES (usa_owner_unmask_v2 for properties in scope)
@@ -280,32 +294,33 @@ print("-" * 80)
 
 entities_raw = []
 
-for i in range(0, len(tax_id_list), batch_size):
-    batch = tax_id_list[i:i+batch_size]
-    
-    query = f"""
-    query {{
-        usa_owner_unmask_v2(where: {{tax_assessor_id: {{_in: {json.dumps(batch)}}}}}) {{
-            cherre_usa_owner_unmask_pk
-            owner_id
-            owner_name
-            owner_type
-            owner_state
-            has_confidence
-            occurrences_count
-            last_seen_date
-            tax_assessor_id
+with tqdm(total=len(tax_id_list), desc="  Fetching entities", unit=" ids", ncols=80) as pbar:
+    for i in range(0, len(tax_id_list), batch_size):
+        batch = tax_id_list[i:i+batch_size]
+        
+        query = f"""
+        query {{
+            usa_owner_unmask_v2(where: {{tax_assessor_id: {{_in: {json.dumps(batch)}}}}}) {{
+                cherre_usa_owner_unmask_pk
+                owner_id
+                owner_name
+                owner_type
+                owner_state
+                has_confidence
+                occurrences_count
+                last_seen_date
+                tax_assessor_id
+            }}
         }}
-    }}
-    """
-    
-    result = query_cherre(query)
-    if result and 'data' in result:
-        entities_raw.extend(result['data']['usa_owner_unmask_v2'])
-    
-    print(f"   Fetched {len(entities_raw):,} entity records...", end='\r')
+        """
+        
+        result = query_cherre(query)
+        if result and 'data' in result:
+            entities_raw.extend(result['data']['usa_owner_unmask_v2'])
+        
+        pbar.update(len(batch))
 
-print(f"\n✅ Extracted {len(entities_raw):,} entity records")
+print(f"✅ Extracted {len(entities_raw):,} entity records")
 
 # ============================================================================
 # DATA TRANSFORMATION
@@ -332,6 +347,25 @@ history_by_property = defaultdict(list)
 for hist in property_history_raw:
     history_by_property[hist['tax_assessor_id']].append(hist)
 
+# Deduplicate: Keep only the most recent record per (tax_assessor_id, year)
+# Multiple records per year exist due to mid-year reassessments
+for tax_id in history_by_property.keys():
+    records = history_by_property[tax_id]
+    
+    # Group by year, keep highest PK (most recent) per year
+    year_groups = defaultdict(list)
+    for rec in records:
+        year_groups[rec['assessor_snap_shot_year']].append(rec)
+    
+    # Keep only the record with highest PK per year
+    deduped = []
+    for year, recs in year_groups.items():
+        # Sort by PK descending, take first (highest/most recent)
+        latest = max(recs, key=lambda x: x.get('cherre_tax_assessor_history_v2_pk', 0))
+        deduped.append(latest)
+    
+    history_by_property[tax_id] = deduped
+
 for tax_id, prop in property_lookup.items():
     histories = sorted(history_by_property.get(tax_id, []), 
                       key=lambda x: x['assessor_snap_shot_year'])
@@ -346,20 +380,20 @@ for tax_id, prop in property_lookup.items():
             dim_property.append({
                 'property_key': property_key_counter,
                 'tax_assessor_id': tax_id,
-                'assessor_parcel_number': prop.get('assessor_parcel_number_formatted'),
-                'property_address': prop.get('property_address'),
-                'property_city': prop.get('property_city'),
-                'property_state': prop.get('property_state'),
-                'property_zip': prop.get('property_zip'),
-                'property_county': prop.get('property_county'),
+                'assessor_parcel_number': prop.get('assessor_parcel_number_raw'),
+                'property_address': prop.get('address'),
+                'property_city': prop.get('city'),
+                'property_state': prop.get('state'),
+                'property_zip': prop.get('zip'),
+                'property_county': prop.get('situs_county'),
                 'property_use_code': prop.get('property_use_standardized_code'),
-                'land_use_code': prop.get('land_use_code'),
+                'land_use_code': None,  # Not available in tax_assessor_v2
                 'year_built': prop.get('year_built'),
-                'building_sqft': hist.get('building_square_feet') or prop.get('building_square_feet'),
-                'land_sqft': hist.get('land_square_feet') or prop.get('land_square_feet'),
+                'building_sqft': hist.get('building_sq_ft') or prop.get('building_sq_ft'),
+                'land_sqft': hist.get('lot_size_sq_ft') or prop.get('lot_size_sq_ft'),
                 'units_count': prop.get('units_count'),
-                'assessed_value': hist.get('total_assessed_value'),
-                'market_value': hist.get('total_market_value'),
+                'assessed_value': hist.get('assessed_value_total'),
+                'market_value': hist.get('market_value_total'),
                 'latitude': prop.get('latitude'),
                 'longitude': prop.get('longitude'),
                 'valid_from': valid_from,
@@ -373,20 +407,20 @@ for tax_id, prop in property_lookup.items():
         dim_property.append({
             'property_key': property_key_counter,
             'tax_assessor_id': tax_id,
-            'assessor_parcel_number': prop.get('assessor_parcel_number_formatted'),
-            'property_address': prop.get('property_address'),
-            'property_city': prop.get('property_city'),
-            'property_state': prop.get('property_state'),
-            'property_zip': prop.get('property_zip'),
-            'property_county': prop.get('property_county'),
+            'assessor_parcel_number': prop.get('assessor_parcel_number_raw'),
+            'property_address': prop.get('address'),
+            'property_city': prop.get('city'),
+            'property_state': prop.get('state'),
+            'property_zip': prop.get('zip'),
+            'property_county': prop.get('situs_county'),
             'property_use_code': prop.get('property_use_standardized_code'),
-            'land_use_code': prop.get('land_use_code'),
+            'land_use_code': None,  # Not available in tax_assessor_v2
             'year_built': prop.get('year_built'),
-            'building_sqft': prop.get('building_square_feet'),
-            'land_sqft': prop.get('land_square_feet'),
+            'building_sqft': prop.get('building_sq_ft'),
+            'land_sqft': prop.get('lot_size_sq_ft'),
             'units_count': prop.get('units_count'),
-            'assessed_value': prop.get('total_assessed_value'),
-            'market_value': prop.get('total_market_value'),
+            'assessed_value': prop.get('assessed_value_total'),
+            'market_value': prop.get('market_value_total'),
             'latitude': prop.get('latitude'),
             'longitude': prop.get('longitude'),
             'valid_from': '2025-01-01',  # Default to year start
@@ -893,131 +927,160 @@ dq_check('REFERENTIAL_INTEGRITY', 'bridge_property_owner.entity_key → dim_enti
 
 print("\n--- CARDINALITY STATISTICS (Distributions) ---\n")
 
-# Transaction → Party cardinality
-grantor_dist = Counter()
-grantee_dist = Counter()
+if len(fact_transaction) > 0:
+    # Transaction → Party cardinality
+    grantor_dist = Counter()
+    grantee_dist = Counter()
 
-for txn in fact_transaction:
-    grantor_dist[txn['grantor_count']] += 1
-    grantee_dist[txn['grantee_count']] += 1
+    for txn in fact_transaction:
+        grantor_dist[txn['grantor_count']] += 1
+        grantee_dist[txn['grantee_count']] += 1
 
-print("Grantors per transaction:")
-for count in sorted(grantor_dist.keys()):
-    pct = grantor_dist[count] / len(fact_transaction) * 100
-    record_stat('CARDINALITY', f'  {count} grantor(s)', f"{grantor_dist[count]:>7,} ({pct:>5.1f}%)")
+    print("Grantors per transaction:")
+    for count in sorted(grantor_dist.keys()):
+        pct = grantor_dist[count] / len(fact_transaction) * 100
+        record_stat('CARDINALITY', f'  {count} grantor(s)', f"{grantor_dist[count]:>7,} ({pct:>5.1f}%)")
 
-multi_grantor_count = sum(count for g_count, count in grantor_dist.items() if g_count >= 2)
-multi_grantor_pct = multi_grantor_count / len(fact_transaction) * 100
-record_stat('CARDINALITY', 'Transactions with 2+ grantors', 
-            f"{multi_grantor_count:,}/{len(fact_transaction):,} ({multi_grantor_pct:.1f}%)")
+    multi_grantor_count = sum(count for g_count, count in grantor_dist.items() if g_count >= 2)
+    multi_grantor_pct = multi_grantor_count / len(fact_transaction) * 100
+    record_stat('CARDINALITY', 'Transactions with 2+ grantors', 
+                f"{multi_grantor_count:,}/{len(fact_transaction):,} ({multi_grantor_pct:.1f}%)")
 
-print("\nGrantees per transaction:")
-for count in sorted(grantee_dist.keys()):
-    pct = grantee_dist[count] / len(fact_transaction) * 100
-    record_stat('CARDINALITY', f'  {count} grantee(s)', f"{grantee_dist[count]:>7,} ({pct:>5.1f}%)")
+    print("\nGrantees per transaction:")
+    for count in sorted(grantee_dist.keys()):
+        pct = grantee_dist[count] / len(fact_transaction) * 100
+        record_stat('CARDINALITY', f'  {count} grantee(s)', f"{grantee_dist[count]:>7,} ({pct:>5.1f}%)")
 
-multi_grantee_count = sum(count for g_count, count in grantee_dist.items() if g_count >= 2)
-multi_grantee_pct = multi_grantee_count / len(fact_transaction) * 100
-record_stat('CARDINALITY', 'Transactions with 2+ grantees',
-            f"{multi_grantee_count:,}/{len(fact_transaction):,} ({multi_grantee_pct:.1f}%)")
+    multi_grantee_count = sum(count for g_count, count in grantee_dist.items() if g_count >= 2)
+    multi_grantee_pct = multi_grantee_count / len(fact_transaction) * 100
+    record_stat('CARDINALITY', 'Transactions with 2+ grantees',
+                f"{multi_grantee_count:,}/{len(fact_transaction):,} ({multi_grantee_pct:.1f}%)")
+else:
+    record_stat('CARDINALITY', 'Transaction cardinality', 'N/A - no transactions')
 
 # Property → Owner cardinality
-owners_per_property = Counter()
-for prop_key in set(b['property_key'] for b in bridge_property_owner):
-    owner_count = sum(1 for b in bridge_property_owner if b['property_key'] == prop_key)
-    owners_per_property[owner_count] += 1
+if len(bridge_property_owner) > 0:
+    owners_per_property = Counter()
+    for prop_key in set(b['property_key'] for b in bridge_property_owner):
+        owner_count = sum(1 for b in bridge_property_owner if b['property_key'] == prop_key)
+        owners_per_property[owner_count] += 1
 
-print("\nOwners per property:")
-for count in sorted(owners_per_property.keys()):
-    total_props = sum(owners_per_property.values())
-    pct = owners_per_property[count] / total_props * 100 if total_props else 0
-    record_stat('CARDINALITY', f'  {count} owner(s)', f"{owners_per_property[count]:>7,} ({pct:>5.1f}%)")
+    print("\nOwners per property:")
+    for count in sorted(owners_per_property.keys()):
+        total_props = sum(owners_per_property.values())
+        pct = owners_per_property[count] / total_props * 100 if total_props else 0
+        record_stat('CARDINALITY', f'  {count} owner(s)', f"{owners_per_property[count]:>7,} ({pct:>5.1f}%)")
 
-multi_owner_count = sum(count for o_count, count in owners_per_property.items() if o_count >= 2)
-multi_owner_pct = multi_owner_count / sum(owners_per_property.values()) * 100 if owners_per_property else 0
-record_stat('CARDINALITY', 'Properties with 2+ owners',
-            f"{multi_owner_count:,}/{sum(owners_per_property.values()):,} ({multi_owner_pct:.1f}%)")
+    multi_owner_count = sum(count for o_count, count in owners_per_property.items() if o_count >= 2)
+    multi_owner_pct = multi_owner_count / sum(owners_per_property.values()) * 100 if owners_per_property else 0
+    record_stat('CARDINALITY', 'Properties with 2+ owners',
+                f"{multi_owner_count:,}/{sum(owners_per_property.values()):,} ({multi_owner_pct:.1f}%)")
+else:
+    record_stat('CARDINALITY', 'Property ownership cardinality', 'N/A - no ownership data')
 
 print("\n--- MODEL ASSUMPTION: DATA CONSISTENCY ---\n")
 
 # SCD Type 2: is_current flag consistency - MUST have only 1 current row per natural key
-current_props = sum(1 for p in dim_property if p['is_current'])
-unique_current_tax_ids = len(set(p['tax_assessor_id'] for p in dim_property if p['is_current']))
-dq_check('CONSISTENCY', 'dim_property: 1 current row per tax_assessor_id',
-         unique_current_tax_ids, current_props,
-         threshold=100,
-         message=f"{current_props - unique_current_tax_ids} duplicate current rows" if current_props != unique_current_tax_ids else "✓ No duplicate current rows")
+if len(dim_property) > 0:
+    current_props = sum(1 for p in dim_property if p['is_current'])
+    unique_current_tax_ids = len(set(p['tax_assessor_id'] for p in dim_property if p['is_current']))
+    dq_check('CONSISTENCY', 'dim_property: 1 current row per tax_assessor_id',
+             unique_current_tax_ids, current_props if current_props > 0 else 1,
+             threshold=100,
+             message=f"{current_props - unique_current_tax_ids} duplicate current rows" if current_props != unique_current_tax_ids else "✓ No duplicate current rows")
 
 # Bridge table party counts MUST match fact table aggregates
-bridge_grantor_count = sum(1 for b in bridge_transaction_party if b['party_role'] == 'grantor')
-fact_grantor_sum = sum(t['grantor_count'] for t in fact_transaction)
-matches = (bridge_grantor_count == fact_grantor_sum)
-dq_check('CONSISTENCY', 'bridge_transaction_party grantor count = fact.grantor_count sum',
-         fact_grantor_sum if matches else 0, fact_grantor_sum,
-         threshold=100,
-         message=f"Bridge: {bridge_grantor_count:,}, Fact sum: {fact_grantor_sum:,}")
+if len(fact_transaction) > 0 and len(bridge_transaction_party) > 0:
+    bridge_grantor_count = sum(1 for b in bridge_transaction_party if b['party_role'] == 'grantor')
+    fact_grantor_sum = sum(t['grantor_count'] for t in fact_transaction)
+    matches = (bridge_grantor_count == fact_grantor_sum)
+    dq_check('CONSISTENCY', 'bridge_transaction_party grantor count = fact.grantor_count sum',
+             fact_grantor_sum if matches else 0, fact_grantor_sum if fact_grantor_sum > 0 else 1,
+             threshold=100,
+             message=f"Bridge: {bridge_grantor_count:,}, Fact sum: {fact_grantor_sum:,}")
 
-bridge_grantee_count = sum(1 for b in bridge_transaction_party if b['party_role'] == 'grantee')
-fact_grantee_sum = sum(t['grantee_count'] for t in fact_transaction)
-matches = (bridge_grantee_count == fact_grantee_sum)
-dq_check('CONSISTENCY', 'bridge_transaction_party grantee count = fact.grantee_count sum',
-         fact_grantee_sum if matches else 0, fact_grantee_sum,
-         threshold=100,
-         message=f"Bridge: {bridge_grantee_count:,}, Fact sum: {fact_grantee_sum:,}")
+    bridge_grantee_count = sum(1 for b in bridge_transaction_party if b['party_role'] == 'grantee')
+    fact_grantee_sum = sum(t['grantee_count'] for t in fact_transaction)
+    matches = (bridge_grantee_count == fact_grantee_sum)
+    dq_check('CONSISTENCY', 'bridge_transaction_party grantee count = fact.grantee_count sum',
+             fact_grantee_sum if matches else 0, fact_grantee_sum if fact_grantee_sum > 0 else 1,
+             threshold=100,
+             message=f"Bridge: {bridge_grantee_count:,}, Fact sum: {fact_grantee_sum:,}")
 
 # Date range validation - all transactions MUST be in expected range
-txn_dates = [t['transaction_date'] for t in fact_transaction if t.get('transaction_date')]
-if txn_dates:
-    min_date = min(txn_dates)
-    max_date = max(txn_dates)
-    dates_in_range = sum(1 for d in txn_dates if START_DATE <= d <= END_DATE)
-    dq_check('CONSISTENCY', f'Transactions within expected date range',
-             dates_in_range, len(txn_dates),
-             threshold=100,
-             message=f"Expected: {START_DATE} to {END_DATE}, Actual: {min_date} to {max_date}")
+if len(fact_transaction) > 0:
+    txn_dates = [t['transaction_date'] for t in fact_transaction if t.get('transaction_date')]
+    if txn_dates:
+        min_date = min(txn_dates)
+        max_date = max(txn_dates)
+        dates_in_range = sum(1 for d in txn_dates if START_DATE <= d <= END_DATE)
+        dq_check('CONSISTENCY', f'Transactions within expected date range',
+                 dates_in_range, len(txn_dates),
+                 threshold=100,
+                 message=f"Expected: {START_DATE} to {END_DATE}, Actual: {min_date} to {max_date}")
+    else:
+        dq_check('CONSISTENCY', 'Transaction dates present',
+                 0, len(fact_transaction),
+                 threshold=100,
+                 message="No transaction dates found")
 
 print("\n--- MODEL ASSUMPTION: BUSINESS LOGIC ---\n")
 
-# Sales transactions (is_sale=TRUE) MUST have amount > 0 by definition
-sales = [t for t in fact_transaction if t['is_sale']]
-sales_with_amount = sum(1 for t in sales if t.get('document_amount') and t['document_amount'] > 0)
-dq_check('BUSINESS_LOGIC', 'Sales (is_sale=TRUE) have document_amount > 0',
-         sales_with_amount, len(sales),
-         threshold=100,
-         message="Sales classification requires non-zero amount")
+if len(fact_transaction) > 0:
+    # Sales transactions (is_sale=TRUE) MUST have amount > 0 by definition
+    sales = [t for t in fact_transaction if t['is_sale']]
+    if len(sales) > 0:
+        sales_with_amount = sum(1 for t in sales if t.get('document_amount') and t['document_amount'] > 0)
+        dq_check('BUSINESS_LOGIC', 'Sales (is_sale=TRUE) have document_amount > 0',
+                 sales_with_amount, len(sales),
+                 threshold=100,
+                 message="Sales classification requires non-zero amount")
+    else:
+        dq_check('BUSINESS_LOGIC', 'Sales transactions exist',
+                 0, 1,
+                 threshold=0,
+                 message="No sales transactions in dataset")
 
-# Every transaction should have at least one party (grantor OR grantee)
-txns_with_parties = sum(1 for t in fact_transaction if t['grantor_count'] > 0 or t['grantee_count'] > 0)
-dq_check('BUSINESS_LOGIC', 'Transactions have at least one party',
-         txns_with_parties, len(fact_transaction),
-         threshold=95,
-         message="Some transactions may be data quality issues if no parties")
+    # Every transaction should have at least one party (grantor OR grantee)
+    txns_with_parties = sum(1 for t in fact_transaction if t['grantor_count'] > 0 or t['grantee_count'] > 0)
+    dq_check('BUSINESS_LOGIC', 'Transactions have at least one party',
+             txns_with_parties, len(fact_transaction),
+             threshold=95,
+             message="Some transactions may be data quality issues if no parties")
+else:
+    dq_check('BUSINESS_LOGIC', 'Transaction data exists',
+             0, 1,
+             threshold=0,
+             message="No transactions extracted - check date range or API access")
 
 print("\n--- TRANSACTION TYPE STATISTICS ---\n")
 
-# Transaction category breakdown
-category_dist = Counter(t['transaction_category'] for t in fact_transaction)
-for category in sorted(category_dist.keys()):
-    pct = category_dist[category] / len(fact_transaction) * 100
-    record_stat('TRANSACTION_TYPE', f'{category} transactions', 
-                f"{category_dist[category]:>7,} ({pct:>5.1f}%)")
+if len(fact_transaction) > 0:
+    # Transaction category breakdown
+    category_dist = Counter(t['transaction_category'] for t in fact_transaction)
+    for category in sorted(category_dist.keys()):
+        pct = category_dist[category] / len(fact_transaction) * 100
+        record_stat('TRANSACTION_TYPE', f'{category} transactions', 
+                    f"{category_dist[category]:>7,} ({pct:>5.1f}%)")
 
-# Sales breakdown
-sales_count = len(sales)
-sales_pct = sales_count / len(fact_transaction) * 100
-record_stat('TRANSACTION_TYPE', 'Total sales (is_sale=TRUE)', 
-            f"{sales_count:,}/{len(fact_transaction):,} ({sales_pct:.1f}%)")
+    # Sales breakdown
+    sales_count = len(sales)
+    sales_pct = sales_count / len(fact_transaction) * 100
+    record_stat('TRANSACTION_TYPE', 'Total sales (is_sale=TRUE)', 
+                f"{sales_count:,}/{len(fact_transaction):,} ({sales_pct:.1f}%)")
 
-# Document amounts
-zero_amount = sum(1 for t in fact_transaction if t.get('document_amount') == 0)
-null_amount = sum(1 for t in fact_transaction if t.get('document_amount') is None)
-positive_amount = sum(1 for t in fact_transaction if t.get('document_amount') and t['document_amount'] > 0)
-record_stat('TRANSACTION_TYPE', 'Transactions with $0 amount',
-            f"{zero_amount:,}/{len(fact_transaction):,} ({zero_amount/len(fact_transaction)*100:.1f}%)")
-record_stat('TRANSACTION_TYPE', 'Transactions with NULL amount',
-            f"{null_amount:,}/{len(fact_transaction):,} ({null_amount/len(fact_transaction)*100:.1f}%)")
-record_stat('TRANSACTION_TYPE', 'Transactions with amount > $0',
-            f"{positive_amount:,}/{len(fact_transaction):,} ({positive_amount/len(fact_transaction)*100:.1f}%)")
+    # Document amounts
+    zero_amount = sum(1 for t in fact_transaction if t.get('document_amount') == 0)
+    null_amount = sum(1 for t in fact_transaction if t.get('document_amount') is None)
+    positive_amount = sum(1 for t in fact_transaction if t.get('document_amount') and t['document_amount'] > 0)
+    record_stat('TRANSACTION_TYPE', 'Transactions with $0 amount',
+                f"{zero_amount:,}/{len(fact_transaction):,} ({zero_amount/len(fact_transaction)*100:.1f}%)")
+    record_stat('TRANSACTION_TYPE', 'Transactions with NULL amount',
+                f"{null_amount:,}/{len(fact_transaction):,} ({null_amount/len(fact_transaction)*100:.1f}%)")
+    record_stat('TRANSACTION_TYPE', 'Transactions with amount > $0',
+                f"{positive_amount:,}/{len(fact_transaction):,} ({positive_amount/len(fact_transaction)*100:.1f}%)")
+else:
+    record_stat('TRANSACTION_TYPE', 'Transaction types', 'N/A - no transactions')
 
 # ============================================================================
 # GENERATE DQ REPORT & STATISTICS
@@ -1102,20 +1165,42 @@ with open(summary_filepath, 'w', encoding='utf-8') as f:
     f.write(f"Properties with owners:    {len(set(b['property_key'] for b in bridge_property_owner)):>10,}\n\n")
     
     f.write("--- CARDINALITY FINDINGS ---\n\n")
-    f.write(f"Grantors per transaction:\n")
-    for count in sorted(grantor_dist.keys()):
-        pct = grantor_dist[count] / len(fact_transaction) * 100
-        f.write(f"  {count}: {grantor_dist[count]:>7,} ({pct:>5.1f}%)\n")
     
-    f.write(f"\nGrantees per transaction:\n")
-    for count in sorted(grantee_dist.keys()):
-        pct = grantee_dist[count] / len(fact_transaction) * 100
-        f.write(f"  {count}: {grantee_dist[count]:>7,} ({pct:>5.1f}%)\n")
+    # Only write cardinality if we have transaction data
+    if len(fact_transaction) > 0:
+        # Re-calculate distributions for summary (they were in local scope)
+        grantor_dist_summary = Counter()
+        grantee_dist_summary = Counter()
+        for txn in fact_transaction:
+            grantor_dist_summary[txn['grantor_count']] += 1
+            grantee_dist_summary[txn['grantee_count']] += 1
+        
+        f.write(f"Grantors per transaction:\n")
+        for count in sorted(grantor_dist_summary.keys()):
+            pct = grantor_dist_summary[count] / len(fact_transaction) * 100
+            f.write(f"  {count}: {grantor_dist_summary[count]:>7,} ({pct:>5.1f}%)\n")
+        
+        f.write(f"\nGrantees per transaction:\n")
+        for count in sorted(grantee_dist_summary.keys()):
+            pct = grantee_dist_summary[count] / len(fact_transaction) * 100
+            f.write(f"  {count}: {grantee_dist_summary[count]:>7,} ({pct:>5.1f}%)\n")
+    else:
+        f.write("No transaction data available\n")
     
-    f.write(f"\nOwners per property:\n")
-    for count in sorted(owners_per_property.keys()):
-        pct = owners_per_property[count] / sum(owners_per_property.values()) * 100
-        f.write(f"  {count}: {owners_per_property[count]:>7,} ({pct:>5.1f}%)\n")
+    # Only write owner cardinality if we have ownership data
+    if len(bridge_property_owner) > 0:
+        # Re-calculate for summary
+        owners_per_property_summary = Counter()
+        for prop_key in set(b['property_key'] for b in bridge_property_owner):
+            owner_count = sum(1 for b in bridge_property_owner if b['property_key'] == prop_key)
+            owners_per_property_summary[owner_count] += 1
+        
+        f.write(f"\nOwners per property:\n")
+        for count in sorted(owners_per_property_summary.keys()):
+            pct = owners_per_property_summary[count] / sum(owners_per_property_summary.values()) * 100
+            f.write(f"  {count}: {owners_per_property_summary[count]:>7,} ({pct:>5.1f}%)\n")
+    else:
+        f.write("\nNo ownership data available\n")
 
 print(f"✅ SUMMARY.txt")
 

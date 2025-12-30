@@ -15,9 +15,11 @@
 | 2025-12-18 | 0.75 | Brett sync, email catchup |
 | 2025-12-19 | 2.5 | Standup + work session |
 | 2025-12-22 | 7.5 | Standup + work session |
+| 2025-12-23 | 1.5 | Work session |
+| 2025-12-25 | 0.25 | Data model documentation |
 
 
-**December Total: 4.0 hrs**
+**December Total: 13.25 hrs**
 
 ### NexTitle
 | Date | Hours | Notes |

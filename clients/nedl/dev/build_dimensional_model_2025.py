@@ -29,12 +29,23 @@ from config import CHERRE_API_KEY, CHERRE_API_URL
 # CONFIGURATION
 # ============================================================================
 
-START_DATE = "2025-06-01"
+START_DATE = "2025-12-01"
 END_DATE = "2025-12-22"
 PAGE_SIZE = 500  # Reduced to avoid timeouts (was 1000)
 MAX_RETRIES = 3
 
 OUTPUT_DIR = "output_2025_dec"
+
+# Multifamily property use codes (from production - extract_mf_properties.py)
+# Only extract properties matching these codes (Brett's CRE focus)
+MF_CODES = ["1104", "1105", "1106", "1107", "1108", "1110", "1112"]
+# 1104: Apartment house (5+ units)
+# 1105: Apartment house (100+ units)
+# 1106: Garden Apt, Court Apt (5+ units)
+# 1107: Highrise Apartments
+# 1108: Boarding House, Rooming House, Apt Hotel
+# 1110: Multi-Family Dwellings (Generic, 2+)
+# 1112: Apartments (generic)
 
 # Create output directory
 import os
@@ -206,7 +217,7 @@ for txn in transactions_raw:
 
 print(f"Found {len(unique_tax_ids):,} unique properties in transactions")
 
-# Query properties in batches
+# Query properties in batches (MULTIFAMILY ONLY)
 properties_raw = []
 tax_id_list = list(unique_tax_ids)
 batch_size = 500
@@ -217,7 +228,12 @@ with tqdm(total=len(tax_id_list), desc="  Fetching properties", unit=" ids", nco
         
         query = f"""
         query {{
-            tax_assessor_v2(where: {{tax_assessor_id: {{_in: {json.dumps(batch)}}}}}) {{
+            tax_assessor_v2(
+                where: {{
+                    tax_assessor_id: {{_in: {json.dumps(batch)}}}
+                    property_use_standardized_code: {{_in: {json.dumps(MF_CODES)}}}
+                }}
+            ) {{
                 tax_assessor_id
                 assessor_parcel_number_raw
                 address
@@ -244,7 +260,8 @@ with tqdm(total=len(tax_id_list), desc="  Fetching properties", unit=" ids", nco
         
         pbar.update(len(batch))
 
-print(f"✅ Extracted {len(properties_raw):,} properties")
+print(f"✅ Extracted {len(properties_raw):,} MULTIFAMILY properties")
+print(f"   (Filtered by property_use_standardized_code IN {MF_CODES})")
 
 # ----------------------------------------------------------------------------
 # 3. PROPERTY HISTORY (for SCD Type 2)
@@ -255,9 +272,13 @@ print("-" * 80)
 
 property_history_raw = []
 
-with tqdm(total=len(tax_id_list), desc="  Fetching history", unit=" ids", ncols=80) as pbar:
-    for i in range(0, len(tax_id_list), batch_size):
-        batch = tax_id_list[i:i+batch_size]
+# Only fetch history for MF properties (not all transaction properties)
+mf_tax_id_list = list(set(p['tax_assessor_id'] for p in properties_raw))
+print(f"   (Fetching history for {len(mf_tax_id_list):,} MF properties only)")
+
+with tqdm(total=len(mf_tax_id_list), desc="  Fetching history", unit=" ids", ncols=80) as pbar:
+    for i in range(0, len(mf_tax_id_list), batch_size):
+        batch = mf_tax_id_list[i:i+batch_size]
         
         query = f"""
         query {{
@@ -294,9 +315,10 @@ print("-" * 80)
 
 entities_raw = []
 
-with tqdm(total=len(tax_id_list), desc="  Fetching entities", unit=" ids", ncols=80) as pbar:
-    for i in range(0, len(tax_id_list), batch_size):
-        batch = tax_id_list[i:i+batch_size]
+# Reuse mf_tax_id_list from Phase 3 (only MF properties)
+with tqdm(total=len(mf_tax_id_list), desc="  Fetching entities", unit=" ids", ncols=80) as pbar:
+    for i in range(0, len(mf_tax_id_list), batch_size):
+        batch = mf_tax_id_list[i:i+batch_size]
         
         query = f"""
         query {{
@@ -1052,6 +1074,38 @@ else:
              0, 1,
              threshold=0,
              message="No transactions extracted - check date range or API access")
+
+# Multifamily-specific validation
+print("\n--- MULTIFAMILY PROPERTY VALIDATION ---\n")
+
+if len(dim_property) > 0:
+    # All properties should have valid multifamily use codes
+    valid_mf_codes = set(MF_CODES)
+    props_with_valid_code = sum(1 for p in dim_property 
+                                 if p.get('property_use_code') in valid_mf_codes)
+    dq_check('BUSINESS_LOGIC', 'Properties have valid multifamily use codes',
+             props_with_valid_code, len(dim_property),
+             threshold=95,
+             message=f"Expected codes: {MF_CODES}")
+    
+    # Multifamily properties should have units >= 2 (by definition)
+    props_with_units = sum(1 for p in dim_property 
+                           if p.get('units_count') and p['units_count'] >= 2)
+    props_with_unit_data = sum(1 for p in dim_property if p.get('units_count') is not None)
+    
+    if props_with_unit_data > 0:
+        dq_check('BUSINESS_LOGIC', 'Multifamily properties have 2+ units',
+                 props_with_units, props_with_unit_data,
+                 threshold=85,
+                 message="MF properties should have multiple units by definition")
+        
+        # Stats on unit counts
+        record_stat('MULTIFAMILY', 'Properties with units data',
+                    f"{props_with_unit_data:,}/{len(dim_property):,} ({props_with_unit_data/len(dim_property)*100:.1f}%)")
+    else:
+        record_stat('MULTIFAMILY', 'Properties with units data', 'N/A - no unit count data')
+else:
+    record_stat('MULTIFAMILY', 'Property validation', 'N/A - no properties')
 
 print("\n--- TRANSACTION TYPE STATISTICS ---\n")
 

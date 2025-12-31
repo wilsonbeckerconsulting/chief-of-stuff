@@ -3,21 +3,25 @@
 client: nedl
 status: active
 
+## ETL Pipeline
+**Repo:** https://github.com/wilsonbeckerconsulting/nedl-data (local: `~/Desktop/src/nedl-data`)
+**Prefect:** https://app.prefect.cloud/account/5306d9cd-95be-4d90-8e99-34e9b3295428/workspace/3557e215-f7a6-4392-bb5a-ca899ba0f13b/dashboard
 
-## Cherre Data Quality
-Primary data source. Field completeness validated Dec 16: **PASSED** (MF properties 94-100%, AVMs 100%, transactions 85% with amounts).
-
+Automated daily pipeline: Cherre → raw schema → analytics schema (dimensional model with SCD Type 2). Dev/prod environments, DQ checks, failure alerts, backfill scripts, full documentation.
 
 ## Current Todos
 
 ### P0: Ownership Map (who owns what property)
-Goal: Entity resolution with SCD Type 2 historicals. Dimensional model script exists (`nedl/dev/build_dimensional_model_2025.py`), needs additional data sources.
+Goal: Entity resolution with SCD Type 2 historicals. **Pipeline deployed ✅**, needs additional data sources and validation.
 
-- [ ] Clean up NMHC file (received from Stash, Wilson + Brett own cleanup)
-- [ ] Integrate Yardi flat files into dimensional model
-- [ ] Integrate NMHC data into dimensional model
-- [ ] Load dimensional model to Supabase (analytics schema)
+- [ ] Validate ownership data with Brett (benchmark against his work)
+- [ ] Migrate additional data to ETL (list TBD)
+- [ ] Integrate Yardi flat files
+- [ ] Integrate NMHC data (file from Stash needs cleanup)
 - [ ] Replace Brett's `canonical_owner_*` tables with dimensional model
+
+### App Layer (80% of migration from data perspective)
+- [ ] Build data layer that serves the new application
 
 ### Migration Visibility
 - [ ] Schedule Keegan call (he has context on v1 → v2 migration, data model mapping, scope)
@@ -25,6 +29,12 @@ Goal: Entity resolution with SCD Type 2 historicals. Dimensional model script ex
 
 ### Other
 - [ ] Schedule Cherre call (not blocking - can access independently)
+
+## Strategic Goal
+Help NËDL exit relationship with offshore dev team. Once data pipelines are integrated, tested, and automated:
+- Bugs fixable by AI (Claude Code)
+- New data sources easy to add (patterns established in repo)
+- No ongoing dev team dependency
 
 ## Comp Proposal (Due This Week)
 - Working WITHOUT comp arrangement since project start

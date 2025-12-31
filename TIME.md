@@ -17,10 +17,10 @@
 | 2025-12-22 | 7.5 | Standup + work session |
 | 2025-12-23 | 1.5 | Work session |
 | 2025-12-25 | 0.25 | Data model documentation |
-| 2025-12-30 | 2.0 | Project review, data model planning |
+| 2025-12-30 | 6.0 | Project review, ETL pipeline setup (Prefect + GHA), dev/prod environments |
 
 
-**December Total: 15.25 hrs**
+**December Total: 19.25 hrs**
 
 ### NexTitle
 | Date | Hours | Notes |
